@@ -1,8 +1,0 @@
-com/tankit/service/config/ThreadPoolConfig$CustomThreadFactory.class
-com/tankit/service/AssetServiceApplication.class
-com/tankit/service/data/AssetDataGenerator.class
-com/tankit/service/model/Asset.class
-com/tankit/service/config/CacheConfig.class
-com/tankit/service/config/ThreadPoolConfig.class
-com/tankit/service/grpc/AssetGrpcService.class
-com/tankit/service/repository/AssetRedisRepository.class

@@ -1,7 +1,0 @@
-/Users/ankitthakur/Workspace/high-performance-asset-service/asset-service/src/main/java/com/tankit/service/AssetServiceApplication.java
-/Users/ankitthakur/Workspace/high-performance-asset-service/asset-service/src/main/java/com/tankit/service/config/CacheConfig.java
-/Users/ankitthakur/Workspace/high-performance-asset-service/asset-service/src/main/java/com/tankit/service/config/ThreadPoolConfig.java
-/Users/ankitthakur/Workspace/high-performance-asset-service/asset-service/src/main/java/com/tankit/service/data/AssetDataGenerator.java
-/Users/ankitthakur/Workspace/high-performance-asset-service/asset-service/src/main/java/com/tankit/service/grpc/AssetGrpcService.java
-/Users/ankitthakur/Workspace/high-performance-asset-service/asset-service/src/main/java/com/tankit/service/model/Asset.java
-/Users/ankitthakur/Workspace/high-performance-asset-service/asset-service/src/main/java/com/tankit/service/repository/AssetRedisRepository.java
