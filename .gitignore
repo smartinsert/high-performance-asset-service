@@ -2,4 +2,4 @@
 .vscode/
 META_INF/
 logs/
-
+**/target/

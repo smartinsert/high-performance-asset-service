@@ -14,9 +14,7 @@ import org.springframework.stereotype.Repository;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -88,6 +86,20 @@ public class AssetRedisRepository {
         }
     }
 
+    /** Store a single asset in Redis as a Hash. */
+    public void saveAssetAsHash(Asset asset) {
+        try {
+            String key = ASSET_KEY_PREFIX + asset.getAssetId();
+            Map<String, String> hash = assetToMap(asset);
+            commands.hset(key, hash);
+            commands.sadd(ASSET_SET_KEY, asset.getAssetId());
+            logger.debug("Saved asset (as hash): {}", asset.getAssetId());
+        } catch (Exception e) {
+            logger.error("Error saving asset as hash: {}", asset.getAssetId(), e);
+            throw new RuntimeException("Failed to save asset", e);
+        }
+    }
+
     /**
      * Store multiple assets in Redis using pipeline for better performance
      */
@@ -110,6 +122,55 @@ public class AssetRedisRepository {
         } catch (Exception e) {
             logger.error("Error saving assets in batch", e);
             throw new RuntimeException("Failed to save assets", e);
+        }
+    }
+
+    /** Batch save as hash. */
+    public void saveAssetsAsHash(List<Asset> assets) {
+        try {
+            List<CompletableFuture<Void>> futures = new ArrayList<>();
+            for (Asset asset : assets) {
+                futures.add(CompletableFuture.runAsync(() -> saveAssetAsHash(asset), executorService));
+            }
+            CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            logger.info("Saved {} assets to Redis (hash)", assets.size());
+        } catch (Exception e) {
+            logger.error("Error saving assets in batch", e);
+            throw new RuntimeException("Failed to save assets", e);
+        }
+    }
+
+    /**
+     * Retrieve single asset by Id
+     */
+    public Asset findHashedAssetById(String assetId) {
+        try {
+            String key = ASSET_KEY_PREFIX + assetId;
+            Map<String, String> hash = commands.hgetall(key);
+            if (hash != null && !hash.isEmpty()) {
+                return mapToAsset(hash);
+            }
+            logger.debug("Asset not found: {}", assetId);
+            return null;
+        } catch (Exception e) {
+            logger.error("Error retrieving asset as hash: " + assetId, e);
+            return null;
+        }
+    }
+
+    /** Retrieve multiple assets. */
+    public List<Asset> findHashedAssetsByIds(List<String> assetIds) {
+        List<Asset> assets = new ArrayList<>();
+        try {
+            for (String assetId : assetIds) {
+                Asset asset = findAssetById(assetId);
+                if (asset != null) assets.add(asset);
+            }
+            logger.debug("Found {} out of {} requested assets", assets.size(), assetIds.size());
+            return assets;
+        } catch (Exception e) {
+            logger.error("Error retrieving assets as hash", e);
+            throw new RuntimeException("Failed to retrieve assets", e);
         }
     }
 
@@ -182,19 +243,6 @@ public class AssetRedisRepository {
     }
 
     /**
-     * Check if Redis connection is healthy
-     */
-    public boolean isHealthy() {
-        try {
-            String response = commands.ping();
-            return "PONG".equals(response);
-        } catch (Exception e) {
-            logger.error("Redis health check failed", e);
-            return false;
-        }
-    }
-
-    /**
      * Clear all assets (for testing purposes)
      */
     public void clearAllAssets() {
@@ -211,4 +259,44 @@ public class AssetRedisRepository {
             throw new RuntimeException("Failed to clear assets", e);
         }
     }
+
+    private Map<String, String> assetToMap(Asset asset) {
+        Map<String, String> m = new HashMap<>();
+        m.put("assetId", asset.getAssetId());
+        m.put("name", n(asset.getName()));
+        m.put("description", n(asset.getDescription()));
+        m.put("cusip", n(asset.getCusip()));
+        m.put("bloombergId", n(asset.getBloombergId()));
+        m.put("isin", n(asset.getIsin()));
+        m.put("sedol", n(asset.getSedol()));
+        m.put("currency", n(asset.getCurrency()));
+        if (asset.getCreatedTimestamp() != null) m.put("createdTimestamp", String.valueOf(asset.getCreatedTimestamp().toEpochMilli()));
+        if (asset.getMarketValue() != null) m.put("marketValue", String.valueOf(asset.getMarketValue()));
+        return m;
+    }
+
+    private Asset mapToAsset(Map<String, String> map) {
+        Asset a = new Asset();
+        a.setAssetId(map.getOrDefault("assetId", ""));
+        a.setName(map.getOrDefault("name", ""));
+        a.setDescription(map.getOrDefault("description", ""));
+        a.setCusip(map.getOrDefault("cusip", ""));
+        a.setBloombergId(map.getOrDefault("bloombergId", ""));
+        a.setIsin(map.getOrDefault("isin", ""));
+        a.setSedol(map.getOrDefault("sedol", ""));
+        a.setCurrency(map.getOrDefault("currency", ""));
+        if (map.containsKey("createdTimestamp")) {
+            try {
+                a.setCreatedTimestamp(java.time.Instant.ofEpochMilli(Long.parseLong(map.get("createdTimestamp"))));
+            } catch (Exception ignored) {}
+        }
+        if (map.containsKey("marketValue")) {
+            try {
+                a.setMarketValue(Double.parseDouble(map.get("marketValue")));
+            } catch (Exception ignored) {}
+        }
+        return a;
+    }
+
+    private String n(String s) { return s == null ? "" : s; }
 }
