@@ -1,9 +1,9 @@
 package com.tankit.service;
 
+import com.github.benmanes.caffeine.cache.Cache;
 import com.tankit.service.data.AssetDataGenerator;
 import com.tankit.service.model.Asset;
 import com.tankit.service.repository.AssetRedisRepository;
-import com.github.benmanes.caffeine.cache.Cache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,7 +15,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.scheduling.annotation.EnableAsync;
 
 import java.util.List;
-import java.util.Random;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -36,6 +35,12 @@ public class AssetServiceApplication {
 
     @Value("${app.cache-populate-count:30000}")
     private int cachePopulateCount;
+
+    @Value("${app.instance-index}")
+    private int instanceIdx;
+
+    @Value("${app.total-instances}")
+    private int totalInstances;
 
     @Autowired
     private AssetDataGenerator dataGenerator;
@@ -62,7 +67,7 @@ public class AssetServiceApplication {
         return args -> {
             if (initializeData) {
                 initializeAssetData();
-                populateCache();
+                populateCacheForInstance(instanceIdx, totalInstances, cachePopulateCount);
             }
         };
     }
@@ -89,35 +94,49 @@ public class AssetServiceApplication {
         }
     }
 
-    private void populateCache() {
-        logger.info("Populating cache with {} assets...", cachePopulateCount);
+    /**
+     * Populate local Caffeine cache with unique subset of assets,
+     * partitioned by instanceIndex to avoid overlap across multiple service instances.
+     *
+     * @param instanceIndex zero-based index of current instance (0,1,2,...)
+     * @param totalInstances total number of service instances (e.g., 3)
+     * @param cachePopulateCount number of assets to cache per instance (e.g., 300)
+     */
+    public void populateCacheForInstance(int instanceIndex, int totalInstances, int cachePopulateCount) {
+        logger.info("Populating cache partition for instance {} with {} assets...", instanceIndex, cachePopulateCount);
 
         try {
             Set<String> allAssetIds = redisRepository.getAllAssetIds();
-            List<String> assetIdsList = allAssetIds.stream()
-                    .limit(cachePopulateCount)
+            List<String> sortedAssetIds = allAssetIds.stream()
+                    .sorted()
                     .collect(Collectors.toList());
 
-            // Randomly select assets to populate cache for better distribution
-            Random random = new Random();
-            for (int i = 0; i < Math.min(cachePopulateCount, assetIdsList.size()); i++) {
-                int randomIndex = random.nextInt(assetIdsList.size());
-                String assetId = assetIdsList.get(randomIndex);
+            int totalAssets = sortedAssetIds.size();
 
+            if (cachePopulateCount * totalInstances > totalAssets) {
+                throw new IllegalStateException(String.format(
+                        "Not enough assets (%d) in Redis to partition %d assets each for %d instances",
+                        totalAssets, cachePopulateCount, totalInstances));
+            }
+
+            int fromIndex = instanceIndex * cachePopulateCount;
+            int toIndex = Math.min(fromIndex + cachePopulateCount, totalAssets);
+
+            List<String> partitionAssetIds = sortedAssetIds.subList(fromIndex, toIndex);
+
+            for (String assetId : partitionAssetIds) {
                 Asset asset = redisRepository.findAssetById(assetId);
                 if (asset != null) {
                     assetCache.put(assetId, asset);
                 }
-
-                // Remove to avoid duplicates
-                assetIdsList.remove(randomIndex);
             }
 
-            logger.info("Cache populated with {} assets. Cache size: {}",
-                    cachePopulateCount, assetCache.estimatedSize());
+            logger.info("Instance {} cache populated with {} assets. Cache size: {}",
+                    instanceIndex, partitionAssetIds.size(), assetCache.estimatedSize());
 
         } catch (Exception e) {
-            logger.error("Error populating cache", e);
+            logger.error("Error populating cache for instance " + instanceIndex, e);
         }
     }
+
 }
