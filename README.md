@@ -9,11 +9,10 @@ A high-performance distributed asset management system demonstrating gRPC stream
 ## Key Features
 
 - **gRPC Streaming**: Client receives streaming responses for large batches
-- **Multi-Level Caching**: Caffeine (L1) + Redis (L2) + Inter-service communication
-- **Thread Pool Processing**: Configurable ThreadPoolExecutor with 10 worker threads
+- **Multi-Level Caching**: Caffeine (L1) + Redis (L2)
+- **Thread Pool Processing**: Configurable ThreadPoolExecutor in the client with n worker threads, where n = number of gRPC services
 - **Asset Data Model**: Complete financial instrument representation (CUSIP, Bloomberg ID, ISIN, SEDOL)
 - **Performance Monitoring**: VisualVM integration with JMX metrics
-- **Health Checks**: gRPC health checking protocol implementation
 - **Memory Optimized**: Configured for 8GB RAM systems
 
 ## Components
@@ -26,14 +25,14 @@ A high-performance distributed asset management system demonstrating gRPC stream
 ### 2. Asset Service Module
 
 - **gRPC Server**: Handles asset requests with streaming responses
-- **Caffeine Cache**: In-memory L1 cache for 30k most accessed assets
+- **Caffeine Cache**: In-memory L1 cache for 20k most accessed assets
 - **Redis Integration**: L2 cache and persistence for 100k assets
 - **Thread Pool**: Async processing with configurable thread pool
 - **Inter-service Communication**: gRPC clients to query peer services
 
 ### 3. Asset Client Module
 
-- **gRPC Client**: Makes batched requests (3000 assets in 1000-asset batches)
+- **gRPC Client**: Makes batched requests (20000 assets in 100-asset batches)
 - **Performance Testing**: Measures response times and throughput
 - **Health Monitoring**: Periodic health checks
 
@@ -59,8 +58,8 @@ Asset {
 ### Performance Targets
 
 - **Asset Generation**: Generate 100k unique assets with realistic financial identifiers
-- **Cache Distribution**: 30k assets per service (90k total cached across 3 services)
-- **Request Processing**: Handle 3000-asset requests in <3 seconds
+- **Cache Distribution**: 20k assets per service (60k total cached across 3 services)
+- **Request Processing**: Handle 20k-asset requests in <20 seconds
 - **Memory Usage**: <1GB per service on 8GB RAM system
 - **Thread Pool**: 10 worker threads with configurable queue size
 
