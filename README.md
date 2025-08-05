@@ -1,6 +1,6 @@
 # Asset Prototype System
 
-A high-performance distributed asset management system demonstrating gRPC streaming, multi-level caching, and inter-service communication.
+A high-performance distributed asset management system demonstrating gRPC streaming, multi-level caching, and managed channel round-robin concurrent batch requests.
 
 ## Architecture Overview
 
