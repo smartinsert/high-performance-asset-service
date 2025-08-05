@@ -41,13 +41,13 @@ public class AssetGrpcService extends AssetServiceGrpc.AssetServiceImplBase {
         for (String assetId : request.getAssetIdsList()) {
             Asset asset = assetCache.getIfPresent(assetId);
 
-            logger.info("Found {} in caffeine", assetId);
+//            logger.info("Found {} in caffeine", assetId);
 
             if (asset == null) {
                 asset = redisRepository.findAssetById(assetId);
-                logger.info("Asset {} not found in local cache, Querying redis", assetId);
+//                logger.info("Asset {} not found in local cache, Querying redis", assetId);
                 if (asset != null) {
-                    logger.info("Received from Redis {}", asset.getAssetId());
+//                    logger.info("Received from Redis {}", asset.getAssetId());
                     assetCache.put(assetId, asset);
                 }
             }
@@ -80,7 +80,7 @@ public class AssetGrpcService extends AssetServiceGrpc.AssetServiceImplBase {
         }
 
         responseObserver.onCompleted();
-        logger.info("Completed asset request for {} assets. Found: {}", totalRequested, foundAssets.size());
+//        logger.info("Completed asset request for {} assets. Found: {}", totalRequested, foundAssets.size());
     }
 
     @Override

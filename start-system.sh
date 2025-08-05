@@ -68,7 +68,7 @@ if ! command -v redis-cli &> /dev/null; then
     exit 1
 fi
 
-check_port 6379 || { echo "Redis port"; exit 1; }
+#check_port 6379 || { echo "Redis port"; exit 1; }
 
 # Check if Redis is running
 if ! redis-cli ping > /dev/null 2>&1; then

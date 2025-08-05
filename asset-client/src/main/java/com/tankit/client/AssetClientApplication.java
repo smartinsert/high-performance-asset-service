@@ -1,6 +1,8 @@
 package com.tankit.client;
 
-import com.tankit.asset.proto.*;
+import com.tankit.asset.proto.AssetRequest;
+import com.tankit.asset.proto.AssetResponse;
+import com.tankit.asset.proto.AssetServiceGrpc;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import org.slf4j.Logger;
@@ -15,6 +17,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 @SpringBootApplication
 public class AssetClientApplication {
@@ -48,78 +55,91 @@ public class AssetClientApplication {
         };
     }
 
-    private void performAssetRequests() {
+    private void performAssetRequests() throws InterruptedException {
+        final int numInstances = GRPC_PORTS.size();
         final int NUM_BATCHES = totalAssetCount / batchSize;
+
+        ExecutorService executor = Executors.newFixedThreadPool(numInstances);
 
         List<String> assetIds = generateAssetIds(totalAssetCount);
 
         long startTime = System.currentTimeMillis();
-        int totalAssetsReceived = 0;
-        int totalBatchesProcessed = 0;
-        long totalProcessingTime = 0;
+        AtomicInteger totalAssetsReceived = new AtomicInteger(0);
+        AtomicInteger totalBatchesProcessed = new AtomicInteger(0);
+        AtomicLong totalProcessingTime = new AtomicLong(0);
+
+        List<Future<?>> futures = new ArrayList<>();
 
         for (int i = 0; i < NUM_BATCHES; i++) {
-            int port = GRPC_PORTS.get(i % GRPC_PORTS.size());
-            int startIdx = i * batchSize;
-            int endIdx = Math.min(startIdx + batchSize, totalAssetCount);
-            List<String> batch = assetIds.subList(startIdx, endIdx);
+            final int batchNum = i;
+            futures.add(executor.submit(() -> {
+                int serverIndex = batchNum % numInstances;
+                int port = GRPC_PORTS.get(serverIndex);
 
-            logger.info("Requesting batch {} with {} assets on {}:{}", i + 1, batch.size(), GRPC_HOST, port);
+                int startIdx = batchNum * batchSize;
+                int endIdx = Math.min(startIdx + batchSize, totalAssetCount);
+                List<String> batch = assetIds.subList(startIdx, endIdx);
 
-            // Each batch opens and closes its own channel
-            ManagedChannel channel = ManagedChannelBuilder
-                    .forAddress(GRPC_HOST, port)
-                    .usePlaintext()
-                    .build();
+//                logger.info("Requesting batch {} with {} assets on {}:{}", batchNum + 1, batch.size(),  GRPC_HOST, GRPC_PORTS.get(serverIndex));
 
-            try {
-                AssetServiceGrpc.AssetServiceBlockingStub blockingStub =
-                        AssetServiceGrpc.newBlockingStub(channel);
-
-                AssetRequest request = AssetRequest.newBuilder()
-                        .addAllAssetIds(batch)
-                        .setBatchSize(batchSize)
+                ManagedChannel channel = ManagedChannelBuilder
+                        .forAddress(GRPC_HOST, GRPC_PORTS.get(serverIndex))
+                        .usePlaintext()
                         .build();
 
-                int assetsFoundInBatch = 0;
-                long batchStart = System.currentTimeMillis();
+                try {
+                    AssetServiceGrpc.AssetServiceBlockingStub blockingStub =
+                            AssetServiceGrpc.newBlockingStub(channel);
 
-                // Streaming response (blocking)
-                Iterator<AssetResponse> iterator = blockingStub.getAssets(request);
+                    AssetRequest request = AssetRequest.newBuilder()
+                            .addAllAssetIds(batch)
+                            .setBatchSize(batchSize)
+                            .build();
 
-                while (iterator.hasNext()) {
-                    AssetResponse response = iterator.next();
+                    Iterator<AssetResponse> responseIterator = blockingStub.getAssets(request);
 
-                    int found = response.getTotalFound();
-                    assetsFoundInBatch += found;
+                    int assetsFound = 0;
+                    while (responseIterator.hasNext()) {
+                        AssetResponse resp = responseIterator.next();
+                        assetsFound += resp.getTotalFound();
+                        totalProcessingTime.addAndGet(resp.getProcessingTimeMs());
+                    }
 
-                    logger.info("Batch {} streaming response: {} assets found ({} requested), server: {}, server time: {}ms",
-                            i + 1, found, response.getTotalRequested(), response.getServerInstance(), response.getProcessingTimeMs());
+                    logger.info("Batch {} processed with {} assets found.", batchNum + 1, assetsFound);
+                    totalAssetsReceived.addAndGet(assetsFound);
+                    totalBatchesProcessed.incrementAndGet();
+
+                } catch (Exception ex) {
+                    logger.error("Error processing batch {}", batchNum + 1, ex);
+                } finally {
+                    channel.shutdown();
                 }
-                logger.info("Batch {} complete. Total found: {}", i + 1, assetsFoundInBatch);
-                totalAssetsReceived += assetsFoundInBatch;
-                totalBatchesProcessed++;
+            }));
+        }
+
+        // Wait for all tasks to complete
+        for (Future<?> f : futures) {
+            try {
+                f.get();
             } catch (Exception e) {
-                logger.error("Some error occurred: ", e);
-            } finally {
-                channel.shutdown();
+                logger.error("Error in batch execution", e);
             }
         }
 
+        executor.shutdown();
         long elapsed = System.currentTimeMillis() - startTime;
-
         logger.info("=== PERFORMANCE RESULTS ===");
         logger.info("Total time: {} ms", elapsed);
         logger.info("Total assets requested: {}", totalAssetCount);
-        logger.info("Total assets received: {}", totalAssetsReceived);
-        logger.info("Total batches processed: {}", totalBatchesProcessed);
-        logger.info("Average batch processing time: {} ms for batch size {}",
-                totalBatchesProcessed > 0 ? elapsed / totalBatchesProcessed : 0, batchSize);
-        logger.info("Overall throughput: {} assets/sec",
-                elapsed > 0 ? (totalAssetsReceived * 1000.0) / elapsed : 0);
-        logger.info("Success rate: {}%",
-                totalAssetsReceived * 100.0 / totalAssetCount);
+        logger.info("Total assets received: {}", totalAssetsReceived.get());
+        logger.info("Total batches processed: {}", totalBatchesProcessed.get());
+        logger.info("Average batch processing time: {} ms for batch size {}", (elapsed / NUM_BATCHES), batchSize);
+        logger.info("Average processing time per asset {}ms", (1 / (totalAssetsReceived.get() * 1000.0 / elapsed)) * 1000);
+        logger.info("Overall throughput: {} assets/sec", (totalAssetsReceived.get() * 1000.0 / elapsed));
+        logger.info("Success rate: {}%", (totalAssetsReceived.get() * 100.0 / totalAssetCount));
     }
+
+
 
     private List<String> generateAssetIds(int count) {
         List<String> assetIds = new ArrayList<>(count);
