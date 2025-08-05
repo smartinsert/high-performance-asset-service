@@ -1,4 +1,4 @@
-# Asset Prototype System
+# High Performance Asset Retrieval Service
 
 A high-performance distributed asset management system demonstrating gRPC streaming, multi-level caching, and managed channel round-robin concurrent batch requests.
 
