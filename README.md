@@ -4,27 +4,7 @@ A high-performance distributed asset management system demonstrating gRPC stream
 
 ## Architecture Overview
 
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Asset Client  │    │ Asset Service 1 │    │ Asset Service 2 │    │ Asset Service 3 │
-│   Port: 8090    │    │   Port: 9090    │    │   Port: 9091    │    │   Port: 9092    │
-│                 │    │                 │    │                 │    │                 │
-│  gRPC Client    │───▶│   gRPC Server   │◄──▶│   gRPC Server   │◄──▶│   gRPC Server   │
-│                 │    │                 │    │                 │    │                 │
-│                 │    │ Caffeine Cache  │    │ Caffeine Cache  │    │ Caffeine Cache  │
-│                 │    │   (30k assets)  │    │   (30k assets)  │    │   (30k assets)  │
-└─────────────────┘    └─────────┬───────┘    └─────────┬───────┘    └─────────┬───────┘
-                                 │                      │                      │
-                                 └──────────────────────┼──────────────────────┘
-                                                        │
-                                               ┌─────────▼───────┐
-                                               │      Redis      │
-                                               │   Port: 6379    │
-                                               │                 │
-                                               │  100k Assets    │
-                                               │   Storage       │
-                                               └─────────────────┘
-```
+![img.png](img.png)
 
 ## Key Features
 
